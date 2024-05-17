@@ -1,0 +1,81 @@
+npm install axios-retry
+require('dotenv').config();
+const express = require('express');
+const axios = require('axios');
+const Joi = require('joi');
+const axiosRetry = require('axios-retry');
+const { handleError } = require('../utils');
+
+const router = express.Router();
+const API_KEY = process.env.SIMPLESWAP_API_KEY;
+const BASE_URL = 'https://api.simpleswap.io/v1/';
+
+// Configure axios-retry
+axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
+
+// Schemas
+const exchangeSchema = Joi.object({
+  from: Joi.string().required(),
+  to: Joi.string().required(),
+  address: Joi.string().required()
+});
+
+const transactionSchema = Joi.object({
+  id: Joi.string().alphanum().required()
+});
+
+// Get available currencies
+router.get('/currencies', async (req, res) => {
+  try {
+    const response = await axios.get(`${BASE_URL}get_currency?api_key=${API_KEY}`);
+    res.json(response.data);
+  } catch (error) {
+    handleError(res, error, 'Failed to fetch currencies');
+  }
+});
+
+// Get exchange rates
+router.get('/rates', async (req, res) => {
+  try {
+    const response = await axios.get(`${BASE_URL}get_rates?api_key=${API_KEY}`);
+    res.json(response.data);
+  } catch (error) {
+    handleError(res, error, 'Failed to fetch exchange rates');
+  }
+});
+
+// Create a transaction
+router.post('/exchange', async (req, res) => {
+  const validation = exchangeSchema.validate(req.body);
+  if (validation.error) {
+    return res.status(400).send(validation.error.details[0].message);
+  }
+
+  const { from, to, address } = req.body;
+  try {
+    const response = await axios.post(`${BASE_URL}exchange?api_key=${API_KEY}`, {
+      from, to, address
+    });
+    res.json(response.data);
+  } catch (error) {
+    handleError(res, error, 'Exchange request failed');
+  }
+});
+
+// Check transaction status
+router.get('/transaction/:id', async (req, res) => {
+  const validation = transactionSchema.validate({ id: req.params.id });
+  if (validation.error) {
+    return res.status(400).send(validation.error.details[0].message);
+  }
+
+  const transactionId = req.params.id;
+  try {
+    const response = await axios.get(`${BASE_URL}get_exchange/${transactionId}?api_key=${API_KEY}`);
+    res.json(response.data);
+  } catch (error) {
+    handleError(res, error, 'Failed to fetch transaction status');
+  }
+});
+
+module.exports = router;
